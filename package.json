@@ -8,10 +8,12 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@huggingface/inference": "^2.6.1",
     "@upstash/qstash": "^0.1.7",
     "@upstash/redis": "^1.16.0",
     "@vercel/analytics": "^0.1.7-beta.1",
     "classnames": "^2.3.2",
+    "crawler": "^1.4.0",
     "lru-cache": "^7.14.1",
     "next": "13.0.0",
     "openai": "^3.1.0",

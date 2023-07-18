@@ -1,65 +1,100 @@
-import cn from "classnames";
-import Head from "next/head";
-import Image from "next/image";
-import { useState } from "react";
+"use client";
+
+import { useEffect, useState } from "react";
 import { toast, Toaster } from "react-hot-toast";
-import { useInterval } from "../utils/use-interval";
+import { HfInference } from "@huggingface/inference";
+import classnames from "classnames";
+// import { useInterval } from "../utils/use-interval";
 
 export default function Home() {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
-  const [messageId, setMessageId] = useState("");
   const [image, setImage] = useState(null);
-  const [canShowImage, setCanShowImage] = useState(false);
+  const [modelLinks, setModelLinks] = useState<Array<string>>([]);
+  const [selectedModel, setSelectedModel] = useState("");
+  const hf = new HfInference(process.env.HG_TOKEN);
 
-  useInterval(
-    async () => {
-      const res = await fetch(`/api/poll?id=${messageId}`);
-      const json = await res.json();
-      if (res.status === 200) {
-        setLoading(false);
-        setImage(json.data[0].url);
-      }
-    },
-    loading ? 1000 : null
-  );
+  useEffect(() => {
+    fetch("/api/modelLinks")
+      .then(async (val) => {
+        const valJson = await val.json();
+        const { modelLinks: links } = valJson;
+        setModelLinks(links);
+      })
+      .catch((e) => {
+        toast.error(`Loading error ${e}`);
+      });
+  }, []);
+
+  const blobToBase64 = (blob) => {
+    return new Promise((resolve, _) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(blob);
+    });
+  };
 
   async function submitForm(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setLoading(true);
-    toast("Generating your image...", { position: "top-center" });
-    const response = await fetch(`/api/image?prompt=${prompt}`);
-    const json = await response.json();
-    setMessageId(json.id);
+    try {
+      setLoading(true);
+      toast("Generating your image...", { position: "top-center" });
+      if (!selectedModel) throw "Please select model to generate";
+      const output = await hf.textToImage({
+        inputs: prompt as string,
+        // model: "stabilityai/stable-diffusion-2",
+        // model: "dreamlike-art/dreamlike-photoreal-2.0",
+        model: selectedModel,
+        parameters: {
+          negative_prompt: "blurry",
+        },
+      });
+      const base64Img = await blobToBase64(output);
+      setImage(base64Img);
+    } catch (e) {
+      toast.error(`Generate image have an error: ${e}`, {
+        position: "top-center",
+      });
+    } finally {
+      setLoading(false);
+    }
+
+    // setMessageId(json.id);
   }
 
-  const showLoadingState = loading || (image && !canShowImage);
-
-  console.log(image);
+  const showLoadingState = loading;
 
   return (
     <>
-      <Head>
-        <title>Dall-E 2 AI Image Generator</title>
-      </Head>
-      <div className="antialiased mx-auto px-4 py-20 h-screen bg-gray-100">
+      <div className="antialiased mx-auto px-4 py-10 h-screen bg-gray-100">
         <Toaster />
         <div className="flex flex-col items-center justify-center">
           <h1 className="text-5xl tracking-tighter pb-10 font-bold text-gray-800">
-            Dall-E 2 image generator
+            Image generator
           </h1>
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            className="shadow-sm text-gray-700 rounded-sm px-3 py-2 mb-4 sm:mb-0 sm:min-w-[600px]"
+          >
+            {modelLinks.map((link, index) => (
+              <option key={index} value={link}>
+                {link}
+              </option>
+            ))}
+          </select>
           <form
-            className="flex w-full sm:w-auto flex-col sm:flex-row mb-10"
+            className="flex justify-center items-center w-full sm:w-auto flex-col  mb-10 mt-5"
             onSubmit={submitForm}
           >
-            <input
+            <textarea
               className="shadow-sm text-gray-700 rounded-sm px-3 py-2 mb-4 sm:mb-0 sm:min-w-[600px]"
-              type="text"
+              rows={4}
               placeholder="Prompt for DALL-E"
               onChange={(e) => setPrompt(e.target.value)}
             />
             <button
-              className="min-h-[40px] shadow-sm sm:w-[100px] py-2 inline-flex justify-center font-medium items-center px-4 bg-green-600 text-gray-100 sm:ml-2 rounded-md hover:bg-green-700"
+              className="min-h-[40px] shadow-sm sm:w-[200px] py-2 inline-flex justify-center font-medium items-center px-4 bg-green-600 text-gray-100 sm:ml-2 rounded-md hover:bg-green-700 mt-5"
               type="submit"
             >
               {showLoadingState && (
@@ -91,21 +126,24 @@ export default function Home() {
             <div className="w-full sm:w-[400px] h-[400px] rounded-md shadow-md relative">
               <img
                 alt={`Dall-E representation of: ${prompt}`}
-                className={cn("rounded-md shadow-md h-full object-cover", {
-                  "opacity-100": canShowImage,
-                })}
-                // src={image}
-                src={`data:image/png;base64,${image}`}
+                className={classnames(
+                  "rounded-md shadow-md h-full object-cover",
+                  {
+                    "opacity-100": !!image,
+                  }
+                )}
+                src={image}
+                // src={`data:image/png;base64,${image}`}
               />
             </div>
 
             <div
-              className={cn(
+              className={classnames(
                 "w-full sm:w-[400px] absolute top-0.5 overflow-hidden rounded-2xl bg-white/5 shadow-xl shadow-black/5",
                 {
                   "before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_2s_infinite] before:bg-gradient-to-r before:from-transparent before:via-gray-500/10 before:to-transparent":
                     showLoadingState,
-                  "opacity-0 shadow-none": canShowImage,
+                  "opacity-0 shadow-none": !!image,
                 }
               )}
             ></div>
